@@ -12,9 +12,9 @@ import sys
 import argparse
 import threading
 from time import time
+import csv
 
 from vgg16 import vgg16
-from utils import CustomRunner
 
 # Basic model parameters as external flags.
 FLAGS = None
@@ -47,36 +47,105 @@ def do_eval(sess,
     print('  Num examples: %d  Num correct: %d  Precision @ 1: %0.04f' %
           (num_examples, true_count, precision))
 
+def encode_labels(labels):
+    '''
+    Do preprocessing on labels (such as one-hot encoding)
+    Input: list of labels (each is a string)
+    '''
+    numerical = [ float(x) for x in labels]
+    return numerical
+
+
+def read_csv(csv_file):
+    '''
+    Reads CSV file with the following format:
+    Col_0           Col_1
+    image_name,     price
+
+    Returns 2 lists:
+    - A list is list of image names.
+    - A list of prices
+    '''
+    # Get image names
+    with open(image_list_file, 'rb') as f:
+        im_names = [str(row['id']) for row in csv.DictReader(csv_file)]
+    # Get prices
+    with open(image_list_file, 'rb') as f:
+        prices = [row['price'] for row in csv.DictReader(csv_file)]
+    return im_names, encode_labels(prices)
+
+def read_image_from_disk(input_queue):
+    '''
+    Consumes a single filename and label
+    '''
+    pass
+
 def run_training():
     '''
     Run Training Loop
     '''
-    # Declare graph
+    #################
+    # Declare graph #
+    #################
     model = vgg16()
     predictions = model.inference()
     loss = model.loss()
     train_op = model.optimize()
 
+    #############################
+    # Setup Summaries and Saver #
+    #############################
     # Collect summaries for TensorBoard
     summary = tf.summary.merge_all()
-
     # Create variable initializer op
     init = tf.global_variables_initializer()
-
     # Create checkpoint saver
     saver = tf.train.Saver()
 
+    ####################
+    # Setup Data Queue #
+    ####################
+    # Read in labels and image filenames
+    im_names, prices = read_csv(FLAGS.input_data)
+
+    # First-In First-Out Queue Op for input data
+    q_x = tf.FIFOQueue(capacity=FLAGS.batch_size*2,
+                       dtypes=tf.float32)
+    # Fill up queue op
+    enqueue_op = q.enqueue_many() #TBD, probably call some read function
+
+    # Create (FLAGS.data_threads) QueueRunners.
+    # Each QueueRunner will asynchronously call enqueue_op in its own thread.
+    # This keeps the queue full.
+    q_runner = tf.train.QueueRunner(q_x, [enqueue_op] * FLAGS.data_threads)
+    # Add them to the queue_runners collections
+    tf.train.add_queue_runner(qr)
+
+    # Dequeue op
+    dequeue_x = q_x.dequeue()
+
     # Begin TensorFlow Session
     with tf.Session() as sess:
-        # Instantiate a summary writer to output summaries and the Graph.
-        summary_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
-
         # Run the Variable Initializer Op
         sess.run(init)
 
+        # Coordinator hands data fetching threads
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(coord=coord)
+
+        # Instantiate a summary writer to output summaries and the Graph.
+        summary_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
         # Load ImageNet pretrained weights if given
         if FLAGS.vgg_init:
             model.load_npz_weights()
+
+        try:
+            while not coord.should_stop():
+                pass
+        except tf.errors.OutOfRangeError:
+            print('Done Training -- Epoch limit reached.')
+        finally:
+            coord.request_stop()
 
         # Actually begin the training process
         for step in xrange(FLAGS.max_steps):
@@ -96,7 +165,7 @@ def run_training():
 
             duration_time = time() - start_time
 
-            # Write the summaries and print an overview
+            # Write the summaries and display progress
             if step % 100 == 0:
                 # Print progress to stdout
                 print('Step %d: loss = %.2f (%.3f sec)' % (step, loss_value, duration_time))
@@ -116,7 +185,9 @@ def run_training():
                 checkpoint_filename = 'model_%i.ckpt' % step
                 checkpoint_path = os.path.join(FLAGS.log_dir, checkpoint_filename)
                 saver.save(sess, checkpoint_path, global_step=step)
-
+        # Stop Queueing data, we're done!
+        coord.request_stop()
+        coord.join(threads)
 
 def main(_):
     # Delete logs if they exist
@@ -173,7 +244,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--log_dir',
         type=str,
-        default='/tmp/tensorflow/mnist/logs/fully_connected_feed',
+        default='/tmp/tensorflow/logs/appraisalnet',
         help='Directory to put the log data.'
     )
     parser.add_argument(
@@ -186,7 +257,7 @@ if __name__ == "__main__":
         '--input_data',
         type=str,
         default='/tmp/tensorflow/mnist/input_data',
-        help='input data (format TBD).'
+        help='input data (format TBD). Currently a csv for training'
     )
     parser.add_argument(
         '--vgg_init',
@@ -206,6 +277,13 @@ if __name__ == "__main__":
         default=100,
         help='Minibatch Frequency to save a checkpoint file.'
     )
+    parser.add_argument(
+        '--data_threads',
+        type=int,
+        default=1,
+        help='Number of QueueRunner Threads.'
+    )
+
 
 
 

@@ -3,6 +3,7 @@ import tensorflow as tf
 
 FLAGS = tf.app.flags.FLAGS
 
+
 def data_iterator():
     """ A simple data iterator """
     batch_idx = 0
