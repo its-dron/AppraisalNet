@@ -12,9 +12,9 @@ import sys
 import argparse
 import threading
 from time import time
-import csv
 
 from vgg16 import vgg16
+from data_pipeline import DataPipeline
 
 # Basic model parameters as external flags.
 FLAGS = None
@@ -47,61 +47,17 @@ def do_eval(sess,
     print('  Num examples: %d  Num correct: %d  Precision @ 1: %0.04f' %
           (num_examples, true_count, precision))
 
-def encode_labels(labels):
-    '''
-    Do preprocessing on labels (such as one-hot encoding)
-    Input: list of labels (each element is a string)
-    Returns: list of formatted labels
-    '''
-    numerical = [ float(x) for x in labels]
-    return numerical
-
-def read_csv(csv_file):
-    '''
-    Reads CSV file with the following format:
-    Col_0           Col_1
-    image_name,     price
-
-    Returns 2 lists:
-    - A list is list of image paths.
-    - A list of prices
-    '''
-    # Get image names
-    with open(image_list_file, 'rb') as f:
-        im_names = [str(row['id']) for row in csv.DictReader(csv_file)]
-        im_pathss = [os.path.join(FLAGS.image_dir, x + '.jpg')
-                    for x in im_names]
-    # Get prices
-    with open(image_list_file, 'rb') as f:
-        prices = [row['price'] for row in csv.DictReader(csv_file)]
-
-    return im_paths, encode_labels(prices)
-
-def augment_image(image):
-    '''
-    Apply data augmentations to image (like flip L/R)
-    '''
-    return image
-
-def read_image_from_disk(input_queue):
-    '''
-    Consumes a single filename and label
-    Returns an image tensor and a label
-    '''
-    IM_SHAPE = [224, 224, 3]
-    file_content = tf.read_file(input_queue[0])
-    image = tf.image.decode_jpeg(file_content, channels=IM_SHAPE[2])
-    resized_image = tf.image.resize_images(image, IM_SHAPE[0:2])
-    label = train_input_queue[1]
-    return resized_image, label
-
-def setup_data_pipeline():
-    pass
 
 def run_training():
     '''
     Run Training Loop
     '''
+
+    ####################
+    # Setup Data Queue #
+    ####################
+    data_pipeline = DataPipeline()
+
     #################
     # Declare graph #
     #################
@@ -113,38 +69,13 @@ def run_training():
     #############################
     # Setup Summaries and Saver #
     #############################
+
     # Collect summaries for TensorBoard
     summary = tf.summary.merge_all()
     # Create variable initializer op
     init = tf.global_variables_initializer()
     # Create checkpoint saver
     saver = tf.train.Saver()
-
-    ####################
-    # Setup Data Queue #
-    ####################
-    setup_data_pipeline()
-    # Read in labels and image filenames
-    im_paths, prices = read_csv(FLAGS.input_data)
-    # convert into tensors op
-    # dtype is inferred from input data
-    # can be explicitly stated
-    all_images = tf.convert_to_tensor(im_paths)
-    all_labels = tf.convert_to_tensor(prices)
-
-    #Partittion into train and validate?
-
-    # create queue(s)
-    train_input_queue = tf.train.slice_input_producer(
-            [train_images, train_labels],
-            shuffle=False)
-    validate_input_queue = tf.train.slice_input_producer(
-            [validate_images, validate_labels],
-            shuffle=False)
-
-    # collect into minibatches
-    train_image_batch, train_label_batch = tf.train.batch(
-
     # Begin TensorFlow Session
     with tf.Session() as sess:
         # Run the Variable Initializer Op
@@ -207,6 +138,10 @@ def run_training():
                 checkpoint_filename = 'model_%i.ckpt' % step
                 checkpoint_path = os.path.join(FLAGS.log_dir, checkpoint_filename)
                 saver.save(sess, checkpoint_path, global_step=step)
+
+        # ToDo
+        # Run Test Dataset
+
         # Stop Queueing data, we're done!
         coord.request_stop()
         coord.join(threads)
@@ -311,6 +246,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help='Number of QueueRunner Threads.'
+    )
+    parser.add_argument(
+        '--validate_percentage',
+        type=float,
+        default=0.1,
+        help='Percentage of dataset to use for validation.'
     )
 
 
