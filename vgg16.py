@@ -2,43 +2,86 @@
 
 import tensorflow as tf
 import numpy as np
-from scipy.misc import imread, imresize
-#from imagenet_classes import class_names
+
+FLAGS = tf.app.flags.FLAGS
 
 class vgg16:
+    '''
+    VGG16 Model with ImageNet pretrained weight loader
+
+    Weights can be downloaded from:
+    https://www.cs.toronto.edu/~frossard/vgg16/vgg16_weights.npz
+    '''
+
     def __init__(self, imgs, weights_path=None, sess=None):
         '''
         Sets up network enough to do a forward pass.
         '''
 
         """ init the model with hyper-parameters etc """
-        # List used for loading weights from vgg16.npz
+
+        # List used for loading weights from vgg16.npz (if necessary)
         self.parameters = []
 
-        # Construct I/O placeholders
+        ########
+        # Misc #
+        ########
+        self.global_step = tf.Variable(0, name='global_step', trainable=False)
+        self.learning_rate = tf.train.exponential_decay(
+                FLAGS.initial_lr, # Base learning rate
+                self.global_step * FLAGS.batch_size, # Current idx into the dataset
+                FLAGS.decay_step, # Decay step (when to decrease LR)
+                FLAGS.decay_rate, # Decay Rate
+                staircase=False)
+
+        ####################
+        # I/O placeholders #
+        ####################
         self.x = tf.placeholder(tf.float32, [None, 224, 224, 3])
         self.y = tf.placeholder(tf.float32, [None, 10])
 
-        # Declare rest of layers
+        ###############
+        # Main Layers #
+        ###############
         self._convlayers()
         self._fc_layers()
         self.predictions = tf.nn.softmax(self.fc3l)
 
-        # Load pre-trained ImageNet weights if applicable
+        ###################################################
+        # Load pre-trained ImageNet weights if applicable #
+        ###################################################
         if weights_path is not None and sess is not None:
             self._load_weights(weights_path, sess)
 
+    def inference(self):
+        '''
+        Returns the output of a forward pass of the network (Tensor).
+        '''
         return self.predictions
 
-    def loss(self, batch_x, batch_y=None):
-        y_predict = self.inference(batch_x)
-        self.loss = tf.loss_function(y, y_predict, name="loss") # supervised
+    def loss(self):
+        '''
+        Returns the loss output (Tensor).
+        '''
+        self.loss = tf.reduce_mean('blahblahblah')
+
+        # Add a scalar summary for TensorBoard
+        # Note: tf.scaler_summary is deprecated
+        tf.summary.scalar('loss', self.loss)
+        return self.loss
 
     def optimize(self):
-        return tf.train.optimizer.minimize(self.loss, name="optimizer")
+        '''
+        Returns the Training Operation (op).
+        '''
+        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
+        self.train_op = optimizer.minimize(self.loss, name='optimizer')
+        return self.train_op
 
     def _convlayers(self):
-
+        '''
+        All conv and pooling layers of VGG16
+        '''
         # zero-mean input; resizing has to be done beforehand for uniform tensor shape
         with tf.name_scope('preprocess') as scope:
             mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32, shape=[1, 1, 1, 3], name='img_mean')
@@ -223,6 +266,9 @@ class vgg16:
                 name='pool4')
 
     def _fc_layers(self):
+        '''
+        All FC layers of VGG16 (+custom layers)
+        '''
         # fc1
         with tf.name_scope('fc1') as scope:
             fan_in = int(np.prod(self.pool5.get_shape()[1:]))
@@ -254,16 +300,22 @@ class vgg16:
             self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, weights), biases)
             self.parameters += [weights, biases]
 
-    def _load_npz_weights(self, weight_file, sess):
+    def load_npz_weights(self, weight_file, sess):
         '''
         Load Pretrained VGG16 weights from .npz file
         (weights converted from Caffe)
 
         To only be used when no TensorFlow Snapshot is avaialable.
         '''
+        print "Loading Imagenet Weights."
+
         weights = np.load(weight_file)
         keys = sorted(weights.keys())
         for i, k in enumerate(keys):
             print i, k, np.shape(weights[k])
-            sess.run(self.parameters[i].assign(weights[k]))
+            try:
+                sess.run(self.parameters[i].assign(weights[k]))
+            except:
+                print "%s layer not found." % k
+                pass
 
