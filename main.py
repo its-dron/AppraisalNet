@@ -50,11 +50,11 @@ def do_eval(sess,
 def encode_labels(labels):
     '''
     Do preprocessing on labels (such as one-hot encoding)
-    Input: list of labels (each is a string)
+    Input: list of labels (each element is a string)
+    Returns: list of formatted labels
     '''
     numerical = [ float(x) for x in labels]
     return numerical
-
 
 def read_csv(csv_file):
     '''
@@ -63,21 +63,39 @@ def read_csv(csv_file):
     image_name,     price
 
     Returns 2 lists:
-    - A list is list of image names.
+    - A list is list of image paths.
     - A list of prices
     '''
     # Get image names
     with open(image_list_file, 'rb') as f:
         im_names = [str(row['id']) for row in csv.DictReader(csv_file)]
+        im_pathss = [os.path.join(FLAGS.image_dir, x + '.jpg')
+                    for x in im_names]
     # Get prices
     with open(image_list_file, 'rb') as f:
         prices = [row['price'] for row in csv.DictReader(csv_file)]
-    return im_names, encode_labels(prices)
+
+    return im_paths, encode_labels(prices)
+
+def augment_image(image):
+    '''
+    Apply data augmentations to image (like flip L/R)
+    '''
+    return image
 
 def read_image_from_disk(input_queue):
     '''
     Consumes a single filename and label
+    Returns an image tensor and a label
     '''
+    IM_SHAPE = [224, 224, 3]
+    file_content = tf.read_file(input_queue[0])
+    image = tf.image.decode_jpeg(file_content, channels=IM_SHAPE[2])
+    resized_image = tf.image.resize_images(image, IM_SHAPE[0:2])
+    label = train_input_queue[1]
+    return resized_image, label
+
+def setup_data_pipeline():
     pass
 
 def run_training():
@@ -105,24 +123,27 @@ def run_training():
     ####################
     # Setup Data Queue #
     ####################
+    setup_data_pipeline()
     # Read in labels and image filenames
-    im_names, prices = read_csv(FLAGS.input_data)
+    im_paths, prices = read_csv(FLAGS.input_data)
+    # convert into tensors op
+    # dtype is inferred from input data
+    # can be explicitly stated
+    all_images = tf.convert_to_tensor(im_paths)
+    all_labels = tf.convert_to_tensor(prices)
 
-    # First-In First-Out Queue Op for input data
-    q_x = tf.FIFOQueue(capacity=FLAGS.batch_size*2,
-                       dtypes=tf.float32)
-    # Fill up queue op
-    enqueue_op = q.enqueue_many() #TBD, probably call some read function
+    #Partittion into train and validate?
 
-    # Create (FLAGS.data_threads) QueueRunners.
-    # Each QueueRunner will asynchronously call enqueue_op in its own thread.
-    # This keeps the queue full.
-    q_runner = tf.train.QueueRunner(q_x, [enqueue_op] * FLAGS.data_threads)
-    # Add them to the queue_runners collections
-    tf.train.add_queue_runner(qr)
+    # create queue(s)
+    train_input_queue = tf.train.slice_input_producer(
+            [train_images, train_labels],
+            shuffle=False)
+    validate_input_queue = tf.train.slice_input_producer(
+            [validate_images, validate_labels],
+            shuffle=False)
 
-    # Dequeue op
-    dequeue_x = q_x.dequeue()
+    # collect into minibatches
+    train_image_batch, train_label_batch = tf.train.batch(
 
     # Begin TensorFlow Session
     with tf.Session() as sess:
@@ -141,6 +162,7 @@ def run_training():
 
         try:
             while not coord.should_stop():
+                #Move training loop into here
                 pass
         except tf.errors.OutOfRangeError:
             print('Done Training -- Epoch limit reached.')
@@ -253,6 +275,13 @@ if __name__ == "__main__":
         default=100,
         help='Batch size.  Must divide evenly into the dataset sizes.'
     )
+    parser.add_argument(
+        '--image_dir',
+        type=str,
+        default='images',
+        help='Batch size.  Must divide evenly into the dataset sizes.'
+    )
+
     parser.add_argument(
         '--input_data',
         type=str,
