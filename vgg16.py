@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 import numpy as np
+import layers
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -102,26 +103,11 @@ class vgg16:
             images = self.x-mean
 
         # conv1_1
-        with tf.variable_scope('conv1_1') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,3,64), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(64), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv1_1 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv1_1, kernel, biases = layers.conv(images, 3, 3, 3, 64, 'conv1_1')
+        self.parameters += [kernel, biases]
         # conv1_2
-        with tf.variable_scope('conv1_2') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,64,64), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(64), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv1_1, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv1_2 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
+        self.conv1_2, kernel, biases = layers.conv(self.conv1_1, 3, 3, 64, 64, 'conv1_2')
+        self.parameters += [kernel, biases]
 
         # pool1
         self.pool1 = tf.nn.max_pool(self.conv1_2,
@@ -131,26 +117,11 @@ class vgg16:
                 name='pool1')
 
         # conv2_1
-        with tf.variable_scope('conv2_1') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,64,128), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(128), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.pool1, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv2_1 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv2_1, kernel, biases = layers.conv(self.conv1_2, 3, 3, 64, 128, 'conv2_1')
+        self.parameters += [kernel, biases]
         # conv2_2
-        with tf.variable_scope('conv2_2') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,128,128), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(128), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv2_1, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv2_2 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
+        self.conv2_2, kernel, biases = layers.conv(self.conv2_1, 3, 3, 128, 128, 'conv2_2')
+        self.parameters += [kernel, biases]
 
         # pool2
         self.pool2 = tf.nn.max_pool(self.conv2_2,
@@ -160,37 +131,14 @@ class vgg16:
                 name='pool2')
 
         # conv3_1
-        with tf.variable_scope('conv3_1') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,128,256), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(256), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.pool2, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv3_1 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv3_1, kernel, biases = layers.conv(self.conv2_2, 3, 3, 128, 256, 'conv3_1')
+        self.parameters += [kernel, biases]
         # conv3_2
-        with tf.variable_scope('conv3_2') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,256,256), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(256), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv3_1, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv3_2 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv3_2, kernel, biases = layers.conv(self.conv3_1, 3, 3, 256, 256, 'conv3_2')
+        self.parameters += [kernel, biases]
         # conv3_3
-        with tf.variable_scope('conv3_3') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,256,256), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(256), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv3_2, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv3_3 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
+        self.conv3_3, kernel, biases = layers.conv(self.conv3_2, 3, 3, 256, 256, 'conv3_3')
+        self.parameters += [kernel, biases]
 
         # pool3
         self.pool3 = tf.nn.max_pool(self.conv3_3,
@@ -200,37 +148,14 @@ class vgg16:
                 name='pool3')
 
         # conv4_1
-        with tf.variable_scope('conv4_1') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,256,512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.pool3, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv4_1 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv4_1, kernel, biases = layers.conv(self.conv3_3, 3, 3, 256, 512 , 'conv4_1')
+        self.parameters += [kernel, biases]
         # conv4_2
-        with tf.variable_scope('conv4_2') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,512,512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv4_1, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv4_2 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv4_2, kernel, biases = layers.conv(self.conv4_1, 3, 3, 512, 512, 'conv4_2')
+        self.parameters += [kernel, biases]
         # conv4_3
-        with tf.variable_scope('conv4_3') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,512,512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv4_2, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv4_3 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
+        self.conv4_3, kernel, biases = layers.conv(self.conv4_2, 3, 3, 512, 512, 'conv4_3')
+        self.parameters += [kernel, biases]
 
         # pool4
         self.pool4 = tf.nn.max_pool(self.conv4_3,
@@ -240,37 +165,14 @@ class vgg16:
                 name='pool4')
 
         # conv5_1
-        with tf.variable_scope('conv5_1') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,512,512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.pool4, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv5_1 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv5_1, kernel, biases = layers.conv(self.conv4_3, 3, 3, 256, 512 , 'conv5_1')
+        self.parameters += [kernel, biases]
         # conv5_2
-        with tf.variable_scope('conv5_2') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,512,512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv5_1, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv5_2 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
-
+        self.conv5_2, kernel, biases = layers.conv(self.conv5_1, 3, 3, 512, 512, 'conv5_2')
+        self.parameters += [kernel, biases]
         # conv5_3
-        with tf.variable_scope('conv5_3') as scope:
-            kernel = tf.get_variable('weights', shape=(3,3,512,512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(512), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(self.conv5_2, kernel, [1, 1, 1, 1], padding='SAME')
-            out = tf.nn.bias_add(conv, biases)
-            self.conv5_3 = tf.nn.relu(out, name='relu')
-            self.parameters += [kernel, biases]
+        self.conv5_3, kernel, biases = layers.conv(self.conv5_2, 3, 3, 512, 512, 'conv5_3')
+        self.parameters += [kernel, biases]
 
         # pool5
         self.pool5 = tf.nn.max_pool(self.conv5_3,
@@ -283,36 +185,20 @@ class vgg16:
         '''
         All FC layers of VGG16 (+custom layers)
         '''
+        param_count = int(np.prod(self.pool5.get_shape()[1:]))
+        pool5_flat = tf.reshape(self.pool5, [-1, param_count])
+
         # fc1
-        with tf.variable_scope('fc1') as scope:
-            fan_in = int(np.prod(self.pool5.get_shape()[1:]))
-            weights = tf.get_variable('weights', shape=(fan_in, 4096), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(4096), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            pool5_flat = tf.reshape(self.pool5, [-1, fan_in])
-            fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, weights), biases)
-            self.fc1 = tf.nn.relu(fc1l)
-            self.parameters += [weights, biases]
+        self.fc1, weights, biases = layers.fully_connected(pool5_flat, 4096, 'fc1')
+        self.parameters += [weights, biases]
 
         # fc2
-        with tf.variable_scope('fc2') as scope:
-            weights = tf.get_variable('weights', shape=(4096, 4096), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(4096), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            fc2l = tf.nn.bias_add(tf.matmul(self.fc1, weights), biases)
-            self.fc2 = tf.nn.relu(fc2l)
-            self.parameters += [weights, biases]
+        self.fc2, weights, biases = layers.fully_connected(self.fc1, 4096, 'fc2')
+        self.parameters += [weights, biases]
 
         # fc3
-        with tf.variable_scope('fc3') as scope:
-            weights = tf.get_variable('weights', shape=(4096, 1000), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(1000), dtype=tf.float32,
-                    initializer=tf.contrib.layers.xavier_initializer())
-            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, weights), biases)
-            self.parameters += [weights, biases]
+        self.fc3l, weights, biases = layers.fully_connected(self.fc2, 1000, 'fc3')
+        self.parameters += [weights, biases]
 
     def load_npz_weights(self, weight_file, sess):
         '''
