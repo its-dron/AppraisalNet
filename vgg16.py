@@ -78,6 +78,14 @@ class vgg16:
         self.train_op = optimizer.minimize(self.loss, name='optimizer')
         return self.train_op
 
+    def evaluation(self, labels):
+        '''
+        Returns the count of correct classifications (Tensor).
+        '''
+        correct = tf.nn.in_top_k(self.predictions, labels, 1)
+        n_correct = tf.reduce_sum(tf.cast(correct, tf.int32))
+        return n_correct
+
     def _convlayers(self):
         '''
         All conv and pooling layers of VGG16
