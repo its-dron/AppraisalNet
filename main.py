@@ -156,8 +156,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--mode',
-        type=string,
-        default=0.01,
+        type=str,
+        default='train',
         help='Set network operation. {TRAIN, VALID, TEST}.'
     )
     parser.add_argument(
