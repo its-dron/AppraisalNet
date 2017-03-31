@@ -46,6 +46,7 @@ def run_training():
     validate_loss = validate_model.loss()
     validate_acc = validate_model.evaluate()
     tf.summary.scalar('validate_loss', validate_loss)
+    tf.summary.scalar('validate_acc', validate_acc)
 
     ##########################
     # Declare test graph #
