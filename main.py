@@ -4,11 +4,8 @@ from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
 
-import numpy as np
 import tensorflow as tf
-import numpy as np
 import os
-import sys
 import argparse
 import threading
 from time import time
@@ -19,52 +16,42 @@ from data_pipeline import DataPipeline
 # Basic model parameters as external flags.
 FLAGS = None
 
-# FIX THIS LATER
-def do_eval(sess,
-            eval_correct,
-            images_placeholder,
-            labels_placeholder,
-            data_set):
-    """
-    Runs one evaluation against the full epoch of data.
-    Args:
-      sess: The session in which the model has been trained.
-      eval_correct: The Tensor that returns the number of correct predictions.
-      images_placeholder: The images placeholder.
-      labels_placeholder: The labels placeholder.
-      data_set: The set of images and labels to evaluate, from
-                input_data.read_data_sets().
-    """
-    true_count = 0  # Counts the number of correct predictions.
-    steps_per_epoch = data_set.num_examples // FLAGS.batch_size
-    num_examples = steps_per_epoch * FLAGS.batch_size
-    for step in xrange(steps_per_epoch):
-        feed_dict = fill_feed_dict(data_set,
-                                   images_placeholder,
-                                   labels_placeholder)
-        true_count += sess.run(eval_correct, feed_dict=feed_dict)
-    precision = float(true_count) / num_examples
-    print('  Num examples: %d  Num correct: %d  Precision @ 1: %0.04f' %
-          (num_examples, true_count, precision))
-
-
 def run_training():
     '''
     Run Training Loop
     '''
 
-    ####################
-    # Setup Data Queue #
-    ####################
+    #####################
+    # Setup Data Queues #
+    #####################
     data_pipeline = DataPipeline()
+    train_x, train_y = data_pipeline.train_batch_ops()
+    validate_x, validate_y = data_pipeline.validate_batch_ops()
+    test_x, test_y = data_pipeline.test_batch_ops()
 
-    #################
-    # Declare graph #
-    #################
-    model = vgg16()
-    predictions = model.inference()
-    loss = model.loss()
-    train_op = model.optimize()
+    #######################
+    # Declare train graph #
+    #######################
+    train_model = vgg16(train_x, train_y)
+    predictions = train_model.inference()
+    train_loss = train_model.loss()
+    train_op = train_model.optimize()
+    tf.summary.scalar('train_loss', train_loss)
+
+    ##########################
+    # Declare validate graph #
+    ##########################
+    validate_model = vgg16(validate_x, validate_y)
+    predictions = validate_model.inference()
+    validate_loss = validate_model.loss()
+    validate_acc = validate_model.evaluate()
+    tf.summary.scalar('validate_loss', validate_loss)
+
+    ##########################
+    # Declare test graph #
+    ##########################
+    test_model = vgg16(test_x, test_y)
+    predictions = test_model.inference()
 
     #############################
     # Setup Summaries and Saver #
@@ -89,57 +76,56 @@ def run_training():
         summary_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
         # Load ImageNet pretrained weights if given
         if FLAGS.vgg_init:
-            model.load_npz_weights()
+            train_model.load_npz_weights()
 
+        # Actually begin the training process
         try:
-            while not coord.should_stop():
-                #Move training loop into here
-                pass
+            for step in xrange(FLAGS.max_steps):
+                if coord.should_stop():
+                    break
+                start_time = time()
+
+                # Run one step of the model.  The return values are the activations
+                # from the `train_op` (which is discarded) and the `loss` Op.  To
+                # inspect the values of your Ops or variables, you may include them
+                # in the list passed to sess.run() and the value tensors will be
+                # returned in the tuple from the call.
+                _, loss_value = sess.run([train_op, train_loss])
+
+                duration_time = time() - start_time
+
+                # Write the summaries and display progress
+                if step % 100 == 0:
+                    # Print progress to stdout
+                    print('Step %d: loss = %.2f (%.3f sec)' %
+                            (step, loss_value, duration_time))
+
+                    # Update the summary file
+                    summary_str = sess.run(summary)
+                    summary_writer.add_summary(summary_str, step)
+                    summary_writer.flush()
+
+                # Evaluate Model
+                if (step+1)%FLAGS.validation_freq==0 or (step+1)==FLAGS.max_steps:
+                    print('Training Data Eval:')
+                    validate_loss_value, validate_acc_value = \
+                            sess.run(validate_loss, validate_acc)
+                    print('  Validation loss = %.2f   acc = %.2f' %
+                            (validate_loss_value, validate_acc_value))
+
+                # Save Checkpoint
+                if (step+1)%FLAGS.checkpoint_freq==0 or (step+1)==FLAGS.max_steps:
+                    checkpoint_filename = 'model_%i.ckpt' % step
+                    checkpoint_path = os.path.join(FLAGS.log_dir, checkpoint_filename)
+                    saver.save(sess, checkpoint_path, global_step=step)
         except tf.errors.OutOfRangeError:
             print('Done Training -- Epoch limit reached.')
+        except Exception as e:
+            print("Exception encountered: ", e)
         finally:
             coord.request_stop()
 
-        # Actually begin the training process
-        for step in xrange(FLAGS.max_steps):
-            start_time = time()
-
-            #??????????????????#
-            # SOMEHOW GET DATA #
-            #??????????????????#
-
-            # Run one step of the model.  The return values are the activations
-            # from the `train_op` (which is discarded) and the `loss` Op.  To
-            # inspect the values of your Ops or variables, you may include them
-            # in the list passed to sess.run() and the value tensors will be
-            # returned in the tuple from the call.
-            _, loss_value = sess.run([train_op, loss],
-                    feed_dict=feed_dict)
-
-            duration_time = time() - start_time
-
-            # Write the summaries and display progress
-            if step % 100 == 0:
-                # Print progress to stdout
-                print('Step %d: loss = %.2f (%.3f sec)' % (step, loss_value, duration_time))
-
-                # Update the summary file
-                summary_str = sess.run(summary, feed_dict=feed_dict)
-                summary_writer.add_summary(summary_str, step)
-                summary_writer.flush()
-
-            # Evaluate Model
-            if (step+1)%FLAGS.validation_freq==0 or (step+1)==Flags.max_steps:
-                print('Training Data Eval:')
-                # FINISH THIS AFTER DATA THREADS IS COMPLETE
-
-            # Save Checkpoint
-            if (step+1)%FLAGS.checkpoint_freq==0 or (step+1)==Flags.max_steps:
-                checkpoint_filename = 'model_%i.ckpt' % step
-                checkpoint_path = os.path.join(FLAGS.log_dir, checkpoint_filename)
-                saver.save(sess, checkpoint_path, global_step=step)
-
-        # ToDo
+        # TODO
         # Run Test Dataset
 
         # Stop Queueing data, we're done!
@@ -173,6 +159,12 @@ if __name__ == "__main__":
         type=string,
         default=0.01,
         help='Set network operation. {TRAIN, VALID, TEST}.'
+    )
+    parser.add_argument(
+        '--num_classes',
+        type=int,
+        default=20,
+        help='Number of classes'
     )
     parser.add_argument(
         '--initial_lr',
@@ -259,4 +251,4 @@ if __name__ == "__main__":
 
 
     FLAGS, unparsed = parser.parse_known_args()
-    tf.app.run(main=main, argv[sys.arv[0]] + unparsed)
+    tf.app.run()

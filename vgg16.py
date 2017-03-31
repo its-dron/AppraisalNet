@@ -13,7 +13,7 @@ class vgg16:
     https://www.cs.toronto.edu/~frossard/vgg16/vgg16_weights.npz
     '''
 
-    def __init__(self, imgs, weights_path=None, sess=None):
+    def __init__(self, x, y):
         '''
         Sets up network enough to do a forward pass.
         '''
@@ -37,8 +37,8 @@ class vgg16:
         ####################
         # I/O placeholders #
         ####################
-        self.x = tf.placeholder(tf.float32, [None, 224, 224, 3])
-        self.y = tf.placeholder(tf.float32, [None, 10])
+        self.x = x
+        self.y = y
 
         ###############
         # Main Layers #
@@ -46,12 +46,6 @@ class vgg16:
         self._convlayers()
         self._fc_layers()
         self.predictions = tf.nn.softmax(self.fc3l)
-
-        ###################################################
-        # Load pre-trained ImageNet weights if applicable #
-        ###################################################
-        if weights_path is not None and sess is not None:
-            self._load_weights(weights_path, sess)
 
     def inference(self):
         '''
@@ -63,11 +57,9 @@ class vgg16:
         '''
         Returns the loss output (Tensor).
         '''
-        self.loss = tf.reduce_mean('blahblahblah')
+        cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=self.fc3l, labels=self.y)
+        self.loss = tf.reduce_mean(cross_entropy)
 
-        # Add a scalar summary for TensorBoard
-        # Note: tf.scaler_summary is deprecated
-        tf.summary.scalar('loss', self.loss)
         return self.loss
 
     def optimize(self):
@@ -79,15 +71,14 @@ class vgg16:
         return self.train_op
 
     # INCOMPLETE
-    def evaluation(self, labels):
+    def evaluate(self):
         '''
         Returns the count of correct classifications (Tensor).
         '''
-        correct = tf.nn.in_top_k(self.predictions, labels, 1)
-        n_correct = tf.reduce_sum(tf.cast(correct, tf.int32))
+        correct = tf.nn.in_top_k(self.predictions, self.y, 1)
 
-        accuracy = tf.reduce_mean(tf.cast(correct, tf.int32))
-        return n_correct
+        self.accuracy = tf.reduce_mean(correct)
+        return self.accuracy
 
     #####################
     # Private Functions #
@@ -307,9 +298,9 @@ class vgg16:
 
         # fc3
         with tf.variable_scope('fc3') as scope:
-            weights = tf.get_variable('weights', shape=(4096, 1000), dtype=tf.float32,
+            weights = tf.get_variable('weights', shape=(4096, FLAGS.num_classes), dtype=tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
-            biases = tf.get_variable('biases', shape=(1000), dtype=tf.float32,
+            biases = tf.get_variable('biases', shape=(FLAGS.num_classes), dtype=tf.float32,
                     initializer=tf.contrib.layers.xavier_initializer())
             self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, weights), biases)
             self.parameters += [weights, biases]

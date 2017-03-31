@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 import csv
 import os
@@ -92,9 +91,10 @@ class DataPipeline:
         #####################
         # Generate assignment list (partition list)
         n_exemplars = len(im_paths)
-        validate_set_size = np.ceil(FLAGS.validate_percentage * n_exemplars)
-        test_set_size = np.ceil(FLAGS.test_percentage * n_exemplars)
+        validate_set_size = int(FLAGS.validate_percentage * n_exemplars)
+        test_set_size = int(FLAGS.test_percentage * n_exemplars)
 
+        # TODO: stratified partition
         partitions = [0]*n_exemplars
         partitions[:validate_set_size] = [1] * validate_set_size
         partitions[validate_set_size:(validate_set_size + test_set_size)] = [2] * test_set_size
@@ -125,9 +125,9 @@ class DataPipeline:
         ############################
         # Define Data Retrieval Op #
         ############################
-        train_image, train_label = self.get_data_from_queue(train_input_queue)
-        validate_image, validate_label = self.get_data_from_queue(validate_input_queue)
-        test_image, test_label = self.get_data_from_queue(test_input_queue)
+        train_image, train_label = self.get_data_from_queue(train_input_queue.dequeue())
+        validate_image, validate_label = self.get_data_from_queue(validate_input_queue.dequeue())
+        test_image, test_label = self.get_data_from_queue(test_input_queue.dequeue())
 
         #####################
         # Data Augmentation #
