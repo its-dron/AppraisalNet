@@ -68,7 +68,12 @@ class DataPipeline:
         with open(csv_filename, 'rb') as f:
             prices = [row['price'] for row in csv.DictReader(f)]
 
-        return im_paths, self.encode_labels(prices)
+        # Remove entries where file is not found
+        file_exists = [os.path.isfile(x) for x in im_paths]
+        filtered_im_paths = [i for (i, v) in zip(im_paths, file_exists) if v]
+        filtered_prices = [i for (i, v) in zip(prices, file_exists) if v]
+
+        return filtered_im_paths, self.encode_labels(filtered_prices)
 
     def augment_image(self, image):
         '''
@@ -86,16 +91,13 @@ class DataPipeline:
         Resizes image as necessary.
         Returns an image tensor and a label.
         '''
-        try:
-            file_content = tf.read_file(input_queue[0])
-            label = input_queue[1]
-            # Get Tensor (image) of type uint8
-            image = tf.image.decode_jpeg(file_content, channels=3)
-            # Convert to [0,1]
-            image = tf.to_float(image) / 255.0
-            return image, label
-        except:
-            return None, None
+        file_content = tf.read_file(input_queue[0])
+        label = input_queue[1]
+        # Get Tensor (image) of type uint8
+        image = tf.image.decode_jpeg(file_content, channels=3)
+        # Convert to [0,1]
+        image = tf.to_float(image) / 255.0
+        return image, label
 
     def train_batch_ops(self):
         return self.train_image_batch, self.train_label_batch
