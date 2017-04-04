@@ -43,6 +43,9 @@ class vgg16:
         ####################
         self.x = x
         self.y = tf.to_int32(y)
+        #self.am_training = tf.placeholder(dtype=bool, shape=())
+        #self.x = tf.cond(self.am_training, lambda:train_x, lambda:validate_x)
+        #self.y = tf.to_int32(tf.cond(self.am_training, lambda:validate_x, lambda:validate_y))
 
         ###############
         # Main Layers #
@@ -63,8 +66,9 @@ class vgg16:
         # Sparse takes in index rather than one_hot encoding
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=self.fc3, labels=self.y, name='cross_entropy')
-        self.loss = tf.reduce_mean(cross_entropy,
-                name='loss')
+        self.loss = tf.reduce_mean(cross_entropy, name='loss')
+        self.loss = tf.Print(self.loss, [self.y, self.predictions],
+                message="Labels and Predictions: ", summarize=10)
         return self.loss
 
     def optimize(self):
@@ -104,7 +108,7 @@ class vgg16:
                     shape=[1, 1, 1, 3],
                     name='img_mean')
             images = self.x-mean
-
+        #images = self.x / 255.0
         # conv1_1
         self.conv1_1, weights, biases = layers.conv2d(name='conv1_1',
                 input=images,

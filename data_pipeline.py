@@ -12,9 +12,10 @@ class DataPipeline:
     '''
     Setup Queue and data preprocessor
     '''
-    def __init__(self):
+    def __init__(self, augment=False):
         self.IM_SHAPE = [224, 224, 3]
-        self._setup_data_pipeline()
+        #self.IM_SHAPE = [28, 28, 3] # For shallow network debugging
+        self._setup_data_pipeline(augment)
 
     def encode_labels(self, labels):
         '''
@@ -47,7 +48,9 @@ class DataPipeline:
         #                            on_value=1.0,
         #                            off_value=0.0,
         #                            axis=-1)
-        return digitized
+
+        #return digitized
+        return numerical
 
     def read_csv(self, csv_filename):
         '''
@@ -81,7 +84,7 @@ class DataPipeline:
         '''
         image = image_utils.random_crop_and_resize_proper(image, self.IM_SHAPE[0:2])
         image = image_utils.random_color_augmentation(image)
-        image = tf.image.random_flip_left_right(image)
+        #image = tf.image.random_flip_left_right(image)
         return image
 
     def get_data_from_queue(self, input_queue):
@@ -99,16 +102,10 @@ class DataPipeline:
         image = tf.to_float(image) / 255.0
         return image, label
 
-    def train_batch_ops(self):
-        return self.train_image_batch, self.train_label_batch
+    def batch_ops(self):
+        return self.image_batch, self.label_batch
 
-    def validate_batch_ops(self):
-        return self.validate_image_batch, self.validate_label_batch
-
-    def test_batch_ops(self):
-        return self.test_image_batch, self.test_label_batch
-
-    def _setup_data_pipeline(self):
+    def _setup_data_pipeline(self, augment=False):
         '''
         Partitions data and sets up data queues
         Based off of code written:
@@ -123,79 +120,39 @@ class DataPipeline:
         all_images = tf.convert_to_tensor(im_paths)
         all_labels = tf.convert_to_tensor(prices)
 
-        #####################
-        # Partition Dataset #
-        #####################
-        # Generate assignment list (partition list)
-        n_exemplars = len(im_paths)
-        self.validate_set_size = int(FLAGS.validate_percentage * n_exemplars)
-        self.test_set_size = int(FLAGS.test_percentage * n_exemplars)
-
-        # TODO: stratified partition
-        partitions = [0]*n_exemplars
-        partitions[:self.validate_set_size] = [1] * self.validate_set_size
-        partitions[self.validate_set_size:(self.validate_set_size + self.test_set_size)] \
-                = [2] * self.test_set_size
-        random.shuffle(partitions)
-
-        # Actually partition the data
-        train_images, validate_images, test_images = \
-                tf.dynamic_partition(all_images, partitions, 3, name='image_partition')
-        train_labels, validate_labels, test_labels = \
-                tf.dynamic_partition(all_labels, partitions, 3, name='label_partition')
-
         #################
         # Create Queues #
         #################
-        train_input_queue = tf.train.slice_input_producer(
-                [train_images, train_labels],
+        input_queue = tf.train.slice_input_producer(
+                [all_images, all_labels],
                 shuffle=True,
                 name='train_producer',
-                capacity=FLAGS.batch_size*2)
-        validate_input_queue = tf.train.slice_input_producer(
-                [validate_images, validate_labels],
-                shuffle=False,
-                name='validate_producer',
-                capacity=FLAGS.batch_size*2)
-        test_input_queue = tf.train.slice_input_producer(
-                [test_images, test_labels],
-                shuffle=False,
-                name='test_producer',
                 capacity=FLAGS.batch_size*2)
 
         ############################
         # Define Data Retrieval Op #
         ############################
         # these input queues automatically dequeue 1 slice
-        train_image, train_label       = self.get_data_from_queue(train_input_queue)
-        validate_image, validate_label = self.get_data_from_queue(validate_input_queue)
-        test_image, test_label         = self.get_data_from_queue(test_input_queue)
+        image, label = self.get_data_from_queue(input_queue)
 
         #####################
         # Data Augmentation #
         #####################
         # Network expects [0,255]
-        train_image    = self.augment_image(train_image) * 255
-        validate_image = image_utils.crop_and_resize_proper(validate_image, self.IM_SHAPE) * 255
-        test_image     = image_utils.crop_and_resize_proper(test_image, self.IM_SHAPE) * 255
+        if augment:
+            image = self.augment_image(image)
+        else:
+            image = image_utils.crop_and_resize_proper(image, self.IM_SHAPE)
+        image = image * 255
 
         ################
         # Minibatching #
         ################
-        self.train_image_batch, self.train_label_batch = tf.train.batch(
-                [train_image, train_label],
+        self.image_batch, self.label_batch = tf.train.batch(
+                [image, label],
                 batch_size=FLAGS.batch_size,
                 num_threads=FLAGS.data_threads
                 )
         tf.summary.image('post-aug', self.train_image_batch, max_outputs=6)
-        self.validate_image_batch, self.validate_label_batch = tf.train.batch(
-                [validate_image, validate_label],
-                batch_size=FLAGS.batch_size,
-                num_threads=FLAGS.data_threads
-                )
-        self.test_image_batch, self.test_label_batch = tf.train.batch(
-                [test_image, test_label],
-                batch_size=FLAGS.batch_size,
-                num_threads=FLAGS.data_threads
-                )
+
         # Data Pipeline is ready to go!

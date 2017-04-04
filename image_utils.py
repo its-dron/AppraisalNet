@@ -23,8 +23,9 @@ def random_crop_and_resize_proper(image, out_shape):
     '''
     im_shape = tf.shape(image)[0:2]
     n_channels = tf.shape(image)[2]
+    longest_len = tf.to_int32(tf.maximum(im_shape[0], im_shape[1]))
     crop_len = tf.to_int32(tf.reduce_mean(im_shape))
-    im_square = tf.image.resize_image_with_crop_or_pad(image, crop_len, crop_len)
+    im_square = tf.image.resize_image_with_crop_or_pad(image, longest_len, longest_len)
     rand_crop = tf.random_crop(im_square, size=[crop_len, crop_len, n_channels])
     resized = tf.image.resize_images(rand_crop, out_shape[0:2])
     return resized

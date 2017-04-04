@@ -6,11 +6,13 @@ from six.moves import xrange
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
+from tensorflow.python import debug as tf_debug
 import os
 from time import time
 import pdb
 
 from vgg16 import vgg16
+#from shallow import shallow as vgg16
 from data_pipeline import DataPipeline
 
 # Basic model parameters as external flags.
@@ -32,37 +34,17 @@ def run_training():
     #####################
     with tf.device("/cpu:0"):
         data_pipeline = DataPipeline()
-        train_x, train_y = data_pipeline.train_batch_ops()
-        validate_x, validate_y = data_pipeline.validate_batch_ops()
-        test_x, test_y = data_pipeline.test_batch_ops()
+        train_x, train_y = data_pipeline.batch_ops()
 
+    #######################
+    # Declare train graph #
+    #######################
     with tf.device(compute_string):
-        #######################
-        # Declare train graph #
-        #######################
         train_model = vgg16(train_x, train_y)
-        predictions = train_model.inference()
+        train_predictions = train_model.inference()
         train_loss = train_model.loss()
         train_op = train_model.optimize()
         tf.summary.scalar('train_loss', train_loss)
-
-        ##########################
-        # Declare validate graph #
-        ##########################
-        validate_model = vgg16(validate_x, validate_y)
-        predictions = validate_model.inference()
-        validate_loss = validate_model.loss()
-        validate_acc = validate_model.evaluate()
-        tf.summary.scalar('validate_loss', validate_loss)
-        tf.summary.scalar('validate_acc', validate_acc)
-
-        ##########################
-        # Declare test graph #
-        ##########################
-        test_model = vgg16(test_x, test_y)
-        predictions = test_model.inference()
-        test_acc = validate_model.evaluate()
-
 
     #############################
     # Setup Summaries and Saver #
@@ -81,6 +63,9 @@ def run_training():
             allow_soft_placement=True
             )
     with tf.Session(config=session_config) as sess:
+        # wrap session for debugging
+        #sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+
         # Resume training or
         # Run the Variable Initializer Op
         if FLAGS.resume is None:
@@ -100,7 +85,8 @@ def run_training():
         threads = tf.train.start_queue_runners(coord=coord)
 
         # Instantiate a summary writer to output summaries and the Graph.
-        summary_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
+        train_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_dir, "train"), sess.graph)
+        validate_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_dir, "validate"))
 
         # Actually begin the training process
         try:
@@ -134,20 +120,22 @@ def run_training():
                     # Print progress to stdout
                     print('Step %d: loss = %.2f (%.3f sec)' %
                             (step, loss_value, duration_time))
-
                     # Update the summary file
                     summary_str = sess.run(summary)
-                    summary_writer.add_summary(summary_str, step)
-                    summary_writer.flush()
+                    train_writer.add_summary(summary_str, step)
+                    train_writer.flush()
 
 
                 # Evaluate Model
-                if (step+1)%FLAGS.validation_freq==0 or (step+1)==FLAGS.max_steps:
-                    print('Step %d: Training Data Eval:' % step)
-                    validate_loss_value, validate_acc_value = \
-                            sess.run([validate_loss, validate_acc])
-                    print('  Validation loss = %.2f   acc = %.2f' %
-                            (validate_loss_value, validate_acc_value))
+                #if (step+1)%FLAGS.validation_freq==0 or (step+1)==FLAGS.max_steps:
+                #    print('Step %d: Training Data Eval:' % step)
+                #    validate_loss_value, validate_acc_value = \
+                #            sess.run([validate_loss, validate_acc])
+                #    print('  Validation loss = %.2f   acc = %.2f' %
+                #            (validate_loss_value, validate_acc_value))
+                #    validate_writer.add_summary(validate_loss_value, step)
+                #    validate_writer.add_summary(validate_acc_value, step)
+                #    validate_writer.flush()
 
                 # Save Model Checkpoint
                 if (step+1)%FLAGS.checkpoint_freq==0 or (step+1)==FLAGS.max_steps:
@@ -160,16 +148,16 @@ def run_training():
             print("Exception encountered: ", e)
 
         # Run Test Dataset Accuracy
-        avg_test_acc = 0.0
-        n_test_batches = int(data_pipeline.test_set_size / FLAGS.batch_size)
-        for _ in xrange(n_test_batches):
-            test_acc_value = sess.run(test_acc)
-            avg_test_acc += test_acc_value
-        try:
-            avg_test_acc = avg_test_acc / n_test_batches
-            print('Test Acc = %.2f' % avg_test_acc)
-        except:
-            print('No Test Data')
+        #avg_test_acc = 0.0
+        #n_test_batches = int(data_pipeline.test_set_size / FLAGS.batch_size)
+        #for _ in xrange(n_test_batches):
+        #    test_acc_value = sess.run(test_acc)
+        #    avg_test_acc += test_acc_value
+        #try:
+        #    avg_test_acc = avg_test_acc / n_test_batches
+        #    print('Test Acc = %.2f' % avg_test_acc)
+        #except:
+        #    print('No Test Data')
 
         # Stop Queueing data, we're done!
         coord.request_stop()
