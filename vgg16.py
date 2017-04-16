@@ -30,22 +30,12 @@ class vgg16:
         self.global_step = tf.Variable(0, name='global_step', trainable=False)
         self.learning_rate = FLAGS.initial_lr
 
-        # Commented out because we're now using AdamOptimization
-       # self.learning_rate = tf.train.exponential_decay(
-       #         FLAGS.initial_lr, # Base learning rate
-       #         self.global_step * FLAGS.batch_size, # Current idx into the dataset
-       #         FLAGS.decay_step, # Decay step (when to decrease LR)
-       #         FLAGS.decay_rate, # Decay Rate
-       #         staircase=False)
-
         ####################
         # I/O placeholders #
         ####################
         self.x = x
         self.y = tf.to_int32(y)
         #self.am_training = tf.placeholder(dtype=bool, shape=())
-        #self.x = tf.cond(self.am_training, lambda:train_x, lambda:validate_x)
-        #self.y = tf.to_int32(tf.cond(self.am_training, lambda:validate_x, lambda:validate_y))
 
         ###############
         # Main Layers #
@@ -67,8 +57,8 @@ class vgg16:
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=self.fc3, labels=self.y, name='cross_entropy')
         self.loss = tf.reduce_mean(cross_entropy, name='loss')
-        self.loss = tf.Print(self.loss, [self.y, self.predictions],
-                message="Labels and Predictions: ", summarize=10)
+        #self.loss = tf.Print(self.loss, [self.y, self.predictions],
+        #        message="Labels and Predictions: ", summarize=10)
         return self.loss
 
     def optimize(self):
@@ -76,12 +66,12 @@ class vgg16:
         Returns the Training Operation (op).
         '''
         # SGD
-        #optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-        #self.train_op = optimizer.minimize(self.loss, name='optimizer')
+        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
+        self.train_op = optimizer.minimize(self.loss, name='optimizer')
 
         # Adam
-        optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        self.train_op = optimizer.minimize(self.loss, name='optimizer')
+        #optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        #self.train_op = optimizer.minimize(self.loss, name='optimizer')
         return self.train_op
 
     def evaluate(self):
@@ -109,6 +99,7 @@ class vgg16:
                     name='img_mean')
             images = self.x-mean
         #images = self.x / 255.0
+
         # conv1_1
         self.conv1_1, weights, biases = layers.conv2d(name='conv1_1',
                 input=images,

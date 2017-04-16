@@ -6,12 +6,12 @@ from six.moves import xrange
 
 import tensorflow as tf
 from tensorflow.python.client import timeline
-from tensorflow.python import debug as tf_debug
 import os
+import sys
 from time import time
 import pdb
 
-from vgg16 import vgg16
+from vgg16 import vgg16 as model
 #from shallow import shallow as vgg16
 from data_pipeline import DataPipeline
 
@@ -33,18 +33,20 @@ def run_training():
     # Setup Data Queues #
     #####################
     with tf.device("/cpu:0"):
-        data_pipeline = DataPipeline()
+        data_pipeline = DataPipeline(augment=True)
         train_x, train_y = data_pipeline.batch_ops()
 
     #######################
     # Declare train graph #
     #######################
     with tf.device(compute_string):
-        train_model = vgg16(train_x, train_y)
+        train_model = model(train_x, train_y)
         train_predictions = train_model.inference()
+        train_acc = train_model.evaluate()
         train_loss = train_model.loss()
         train_op = train_model.optimize()
         tf.summary.scalar('train_loss', train_loss)
+        tf.summary.scalar('train_acc', train_acc)
 
     #############################
     # Setup Summaries and Saver #
@@ -63,16 +65,16 @@ def run_training():
             allow_soft_placement=True
             )
     with tf.Session(config=session_config) as sess:
-        # wrap session for debugging
-        #sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-
         # Resume training or
         # Run the Variable Initializer Op
         if FLAGS.resume is None:
             sess.run(init)
             # Load ImageNet pretrained weights if given
             if FLAGS.vgg_init:
-                train_model.load_npz_weights(FLAGS.vgg_init, sess)
+                try:
+                    train_model.load_npz_weights(FLAGS.vgg_init, sess)
+                except:
+                    print('Failed to load pretrained weights.')
         else: # Try and Resume specific, fall back to latest
             saver = tf.train.import_meta_graph('model.meta')
             try:
@@ -86,7 +88,6 @@ def run_training():
 
         # Instantiate a summary writer to output summaries and the Graph.
         train_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_dir, "train"), sess.graph)
-        validate_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_dir, "validate"))
 
         # Actually begin the training process
         try:
@@ -95,19 +96,15 @@ def run_training():
                     break
                 start_time = time()
 
-                # Run one step of the model.  The return values are the activations
-                # from the `train_op` (which is discarded) and the `loss` Op.  To
-                # inspect the values of your Ops or variables, you may include them
-                # in the list passed to sess.run() and the value tensors will be
-                # returned in the tuple from the call.
-                _, loss_value = sess.run([train_op, train_loss])
+                # Run one step of the model.
+                _, loss_value, acc = sess.run([train_op, train_loss, train_acc])
                 duration_time = time() - start_time
 
                 # debug profiler on step 3
                 # open timeline.json in chrome://tracing/
                 if FLAGS.profile and step == 3:
                     run_metadata = tf.RunMetadata()
-                    _, loss = sess.run([train_op, train_loss],
+                    _, loss, acc = sess.run([train_op, train_loss, train_acc],
                             options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),
                             run_metadata=run_metadata)
                     tl = timeline.Timeline(run_metadata.step_stats)
@@ -116,26 +113,15 @@ def run_training():
                         f.write(ctf)
 
                 # Write the summaries and display progress
-                if step % 2 == 0:
+                if step % 1 == 0:
                     # Print progress to stdout
-                    print('Step %d: loss = %.2f (%.3f sec)' %
-                            (step, loss_value, duration_time))
+                    print('Step %d: loss = %.2f, acc = %.2f (%.3f sec)' %
+                            (step, loss_value, acc, duration_time))
+                    sys.stdout.flush()
                     # Update the summary file
                     summary_str = sess.run(summary)
                     train_writer.add_summary(summary_str, step)
                     train_writer.flush()
-
-
-                # Evaluate Model
-                #if (step+1)%FLAGS.validation_freq==0 or (step+1)==FLAGS.max_steps:
-                #    print('Step %d: Training Data Eval:' % step)
-                #    validate_loss_value, validate_acc_value = \
-                #            sess.run([validate_loss, validate_acc])
-                #    print('  Validation loss = %.2f   acc = %.2f' %
-                #            (validate_loss_value, validate_acc_value))
-                #    validate_writer.add_summary(validate_loss_value, step)
-                #    validate_writer.add_summary(validate_acc_value, step)
-                #    validate_writer.flush()
 
                 # Save Model Checkpoint
                 if (step+1)%FLAGS.checkpoint_freq==0 or (step+1)==FLAGS.max_steps:
@@ -146,18 +132,6 @@ def run_training():
             print('Done Training -- Epoch limit reached.')
         except Exception as e:
             print("Exception encountered: ", e)
-
-        # Run Test Dataset Accuracy
-        #avg_test_acc = 0.0
-        #n_test_batches = int(data_pipeline.test_set_size / FLAGS.batch_size)
-        #for _ in xrange(n_test_batches):
-        #    test_acc_value = sess.run(test_acc)
-        #    avg_test_acc += test_acc_value
-        #try:
-        #    avg_test_acc = avg_test_acc / n_test_batches
-        #    print('Test Acc = %.2f' % avg_test_acc)
-        #except:
-        #    print('No Test Data')
 
         # Stop Queueing data, we're done!
         coord.request_stop()
@@ -175,18 +149,12 @@ def run_test():
     else:
         compute_string ='/cpu:0'
 
-    # Check if input is a file -> list (length 1)
-    # Check if input is dir -> list (length n_files)
-
-    #n_files = len(filenames)
-    #return filenames, predictions
-
-
 def main(_):
     # Delete logs if they exist
-    if tf.gfile.Exists(FLAGS.log_dir):
-        tf.gfile.DeleteRecursively(FLAGS.log_dir)
-    tf.gfile.MakeDirs(FLAGS.log_dir)
+    if FLAGS.resume is None:
+        if tf.gfile.Exists(FLAGS.log_dir):
+            tf.gfile.DeleteRecursively(FLAGS.log_dir)
+        tf.gfile.MakeDirs(FLAGS.log_dir)
 
     if FLAGS.mode.lower() == 'train':
         run_training()
@@ -212,18 +180,8 @@ if __name__ == "__main__":
     )
     flags.DEFINE_float(
         'initial_lr',
-        0.01,
+        0.0001,
         'Initial learning rate.'
-    )
-    flags.DEFINE_float(
-        'decay_rate',
-        0.95,
-        'Learning rate decay rate.'
-    )
-    flags.DEFINE_integer(
-        'decay_step',
-        10000,
-        'Number of training exemplars before decreasing learning rate.'
     )
     flags.DEFINE_integer(
         'max_steps',
@@ -256,11 +214,6 @@ if __name__ == "__main__":
         'Path to npz file containing pretrained VGG16 weights.'
     )
     flags.DEFINE_integer(
-        'validation_freq',
-        100,
-        'Minibatch Frequency to test and report validation score.'
-    )
-    flags.DEFINE_integer(
         'checkpoint_freq',
         100,
         'Minibatch Frequency to save a checkpoint file.'
@@ -269,16 +222,6 @@ if __name__ == "__main__":
         'data_threads',
         1,
         'Number of QueueRunner Threads.'
-    )
-    flags.DEFINE_float(
-        'validate_percentage',
-        0.1,
-        'Percentage of dataset to use for validation.'
-    )
-    flags.DEFINE_float(
-        'test_percentage',
-        0.1,
-        'Percentage of dataset to use for test.'
     )
     flags.DEFINE_integer(
         'gpu',

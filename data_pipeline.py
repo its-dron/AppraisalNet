@@ -2,7 +2,6 @@ import tensorflow as tf
 import numpy as np
 import csv
 import os
-import random
 import pdb
 import image_utils
 
@@ -50,7 +49,7 @@ class DataPipeline:
         #                            axis=-1)
 
         #return digitized
-        return numerical
+        return digitized
 
     def read_csv(self, csv_filename):
         '''
@@ -83,8 +82,10 @@ class DataPipeline:
         Apply data augmentations to image (like flip L/R)
         '''
         image = image_utils.random_crop_and_resize_proper(image, self.IM_SHAPE[0:2])
+        image = tf.reshape(image, self.IM_SHAPE) #define shape
+
         image = image_utils.random_color_augmentation(image)
-        #image = tf.image.random_flip_left_right(image)
+        image = tf.image.random_flip_left_right(image)
         return image
 
     def get_data_from_queue(self, input_queue):
@@ -92,7 +93,7 @@ class DataPipeline:
         Reads image from disk
         Consumes a single filename and label.
         Resizes image as necessary.
-        Returns an image tensor and a label.
+        Returns an image [0,1] tensor and a label.
         '''
         file_content = tf.read_file(input_queue[0])
         label = input_queue[1]
@@ -153,6 +154,6 @@ class DataPipeline:
                 batch_size=FLAGS.batch_size,
                 num_threads=FLAGS.data_threads
                 )
-        tf.summary.image('post-aug', self.train_image_batch, max_outputs=6)
+        tf.summary.image('post-aug', self.image_batch, max_outputs=6)
 
         # Data Pipeline is ready to go!
