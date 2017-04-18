@@ -9,6 +9,7 @@ from tensorflow.python.client import timeline
 import os
 import sys
 from time import time
+import re
 import pdb
 
 from vgg16 import vgg16 as model
@@ -304,6 +305,9 @@ def run_validate():
             print('Average_Acc = %.4f' % avg_acc)
             print('Run Time: %.2f' % cum_time)
             sys.stdout.flush()
+
+def run_test():
+    pass
 
 def main(_):
     if FLAGS.mode.lower() == 'train':
