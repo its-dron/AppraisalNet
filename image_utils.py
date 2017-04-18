@@ -30,11 +30,12 @@ def random_crop_and_resize_proper(image, out_shape):
     resized = tf.image.resize_images(rand_crop, out_shape[0:2])
     return resized
 
+
 def random_color_augmentation(image):
     '''
-    Randomly augments the image color attributes
+    Randomly augments the image color attributes in random operation order
     (brightness, saturation, hue, contrast)
-
+    To replace random_color_augmentation()
     Expects input to be in [0,1] Range
     '''
     BRIGHTNESS_MAX_DELTA = 28.0/255.0
@@ -44,40 +45,36 @@ def random_color_augmentation(image):
     CONTRAST_LOWER = 0.6
     CONTRAST_UPPER = 1.4
 
-    order = tf.convert_to_tensor([0,1,2,3])
+    order = tf.convert_to_tensor([1,2,3,4])
     order = tf.random_shuffle(order,seed=None)
 
-    def f1(im):
-        return tf.image.random_brightness(im,
-                    max_delta=BRIGHTNESS_MAX_DELTA)
-    def f2(im):
-        return tf.image.random_saturation(im,
-                    lower=SATURATION_LOWER, upper=SATURATION_UPPER)
-    def f3(im):
-        return tf.image.random_hue(im,
-                    max_delta=HUE_MAX_DELTA)
-    def f4(im):
-        return tf.image.random_contrast(im,
-                    lower=CONTRAST_LOWER, upper=CONTRAST_UPPER)
+    def body(op_idx, image):
+        image = tf.cond(tf.equal(order[op_idx], 1),
+                lambda: tf.image.random_brightness(image,
+                            max_delta=BRIGHTNESS_MAX_DELTA),
+                lambda: image)
+        image = tf.cond(tf.equal(order[op_idx], 2),
+                lambda: tf.image.random_saturation(image,
+                            lower=SATURATION_LOWER, upper=SATURATION_UPPER),
+                lambda: image)
+        image = tf.cond(tf.equal(order[op_idx], 3),
+                lambda: tf.image.random_hue(image,
+                            max_delta=HUE_MAX_DELTA),
+                lambda: image)
+        image = tf.cond(tf.equal(order[op_idx], 4),
+                lambda: tf.image.random_contrast(image,
+                            lower=CONTRAST_LOWER, upper=CONTRAST_UPPER),
+                lambda: image)
+        return op_idx + 1, image
 
-    def body(i, im):
-        im = tf.case({
-                tf.equal(tf.constant(1), order[i]): lambda: \
-                    (tf.image.random_brightness(im,max_delta=BRIGHTNESS_MAX_DELTA)),
-                tf.equal(tf.constant(2), order[i]): lambda: \
-                    (tf.image.random_saturation(im,lower=SATURATION_LOWER, upper=SATURATION_UPPER)),
-                tf.equal(tf.constant(3), order[i]): lambda: \
-                    (tf.image.random_hue(im,max_delta=HUE_MAX_DELTA)),
-                tf.equal(tf.constant(4), order[i]): lambda: \
-                    (tf.image.random_contrast(im,
-                    lower=CONTRAST_LOWER, upper=CONTRAST_UPPER))},
-                default=lambda:(im), exclusive=True)
-        im = tf.reshape(im, [224,224,3])
-        return (i+1, im)
-    counter = tf.constant(0)
-    c = lambda i, im: tf.less(i,4)
-    _, image = tf.while_loop(c, body, loop_vars=(counter, image))
+    def cond(op_idx, image):
+        return op_idx < 4
 
+    # Loop through the augmentation ops
+    i = tf.constant(0) # counter for augment operations
+    _, image = tf.while_loop(cond, body,
+            loop_vars=[i, image])
+
+    # Augmentations may produce something outside the [0.0,1.0] range
     image = tf.clip_by_value(image, 0.0, 1.0)
     return image
-

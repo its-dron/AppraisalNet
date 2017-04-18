@@ -112,12 +112,15 @@ def run_training():
                     with open('timeline.json', 'w') as f:
                         f.write(ctf)
 
-                # Write the summaries and display progress
+                # Display progress
                 if step % 1 == 0:
                     # Print progress to stdout
                     print('Step %d: loss = %.2f, acc = %.2f (%.3f sec)' %
                             (step, loss_value, acc, duration_time))
                     sys.stdout.flush()
+
+                # Write the summaries
+                if step % 20 == 0:
                     # Update the summary file
                     summary_str = sess.run(summary)
                     train_writer.add_summary(summary_str, step)
@@ -127,7 +130,8 @@ def run_training():
                 if (step+1)%FLAGS.checkpoint_freq==0 or (step+1)==FLAGS.max_steps:
                     checkpoint_path = os.path.join(FLAGS.log_dir, 'model')
                     saver.save(sess, checkpoint_path, global_step=step)
-
+                #loop_time = time() - start_time
+                #print('Total Loop Time: %.3f' % loop_time)
         except tf.errors.OutOfRangeError:
             print('Done Training -- Epoch limit reached.')
         except Exception as e:

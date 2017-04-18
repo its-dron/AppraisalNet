@@ -27,7 +27,6 @@ class vgg16:
         ########
         # Misc #
         ########
-        self.global_step = tf.Variable(0, name='global_step', trainable=False)
         self.learning_rate = FLAGS.initial_lr
 
         ####################
