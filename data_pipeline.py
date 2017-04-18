@@ -11,10 +11,9 @@ class DataPipeline:
     '''
     Setup Queue and data preprocessor
     '''
-    def __init__(self, augment=False):
+    def __init__(self, augment=False, num_epochs=None, shuffle=True):
         self.IM_SHAPE = [224, 224, 3]
-        #self.IM_SHAPE = [28, 28, 3] # For shallow network debugging
-        self._setup_data_pipeline(augment)
+        self._setup_data_pipeline(augment, num_epochs, shuffle)
 
     def encode_labels(self, labels):
         '''
@@ -83,6 +82,7 @@ class DataPipeline:
         '''
         image = image_utils.random_crop_and_resize_proper(image, self.IM_SHAPE[0:2])
         image = tf.reshape(image, self.IM_SHAPE) #define shape
+        #image = image.set_shape(self.IM_SHAPE) #define shape
 
         image = image_utils.random_color_augmentation(image)
         image = tf.image.random_flip_left_right(image)
@@ -106,7 +106,7 @@ class DataPipeline:
     def batch_ops(self):
         return self.image_batch, self.label_batch
 
-    def _setup_data_pipeline(self, augment=False):
+    def _setup_data_pipeline(self, augment, num_epochs, shuffle):
         '''
         Partitions data and sets up data queues
         Based off of code written:
@@ -117,6 +117,7 @@ class DataPipeline:
         #################
         # Read in labels and image filenames
         im_paths, prices = self.read_csv(FLAGS.input_data)
+
         # convert into tensors op, dtype is inferred from input data
         all_images = tf.convert_to_tensor(im_paths)
         all_labels = tf.convert_to_tensor(prices)
@@ -126,8 +127,9 @@ class DataPipeline:
         #################
         input_queue = tf.train.slice_input_producer(
                 [all_images, all_labels],
-                shuffle=True,
+                shuffle=shuffle,
                 name='train_producer',
+                num_epochs=num_epochs,
                 capacity=FLAGS.batch_size*2)
 
         ############################
@@ -144,7 +146,6 @@ class DataPipeline:
             image = self.augment_image(image)
         else:
             image = image_utils.crop_and_resize_proper(image, self.IM_SHAPE)
-        image = image * 255
 
         ################
         # Minibatching #

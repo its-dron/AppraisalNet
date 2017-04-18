@@ -1,0 +1,1 @@
+find crawl_images/ -type f | shuf -n 1000 | xargs cp -t sanity_check/

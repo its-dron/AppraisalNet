@@ -14,7 +14,7 @@ class vgg16:
     https://www.cs.toronto.edu/~frossard/vgg16/vgg16_weights.npz
     '''
 
-    def __init__(self, x, y):
+    def __init__(self, x, y, phase):
         '''
         Sets up network enough to do a forward pass.
         '''
@@ -23,24 +23,43 @@ class vgg16:
 
         # List used for loading weights from vgg16.npz (if necessary)
         self.parameters = []
+        self.WEIGHT_FILE = '/appraisal_net/pretrained_weights/vgg16_weights.npz'
+        self.CONV_ACTIVATION = 'relu'
+        self.FC_ACTIVATION   = 'relu'
 
         ########
         # Misc #
         ########
+        self.global_step = tf.get_variable('global_step', dtype=tf.int32, trainable=False,
+                        initializer=0)
         self.learning_rate = FLAGS.initial_lr
+        self.IM_SHAPE = [224, 224, 3]
 
         ####################
         # I/O placeholders #
         ####################
         self.x = x
+        self.x.set_shape([None]+self.IM_SHAPE)
         self.y = tf.to_int32(y)
-        #self.am_training = tf.placeholder(dtype=bool, shape=())
 
         ###############
         # Main Layers #
         ###############
-        self._convlayers()
-        self._fc_layers()
+        with tf.variable_scope('conv_layers'):
+            self._convlayers()
+        with tf.variable_scope('fc_layers'):
+            self._fc_layers()
+
+        ######################
+        # Define Collections #
+        ######################
+        self.conv_trainable = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                "conv_layers")
+        self.fc_trainable = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                "fc_layers")
+
+    def get_global_step(self):
+        return self.global_step
 
     def inference(self):
         '''
@@ -56,21 +75,20 @@ class vgg16:
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=self.fc3, labels=self.y, name='cross_entropy')
         self.loss = tf.reduce_mean(cross_entropy, name='loss')
-        #self.loss = tf.Print(self.loss, [self.y, self.predictions],
-        #        message="Labels and Predictions: ", summarize=10)
-        return self.loss
+        return self.loss, self.y
 
     def optimize(self):
         '''
         Returns the Training Operation (op).
         '''
-        # SGD
-        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-        self.train_op = optimizer.minimize(self.loss, name='optimizer')
-
         # Adam
-        #optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        #self.train_op = optimizer.minimize(self.loss, name='optimizer')
+        optimizer = tf.train.AdamOptimizer(self.learning_rate)
+
+        # Apply Gradient Clipping
+        tvars = tf.trainable_variables()
+        grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars), 5.0)
+        self.train_op = optimizer.apply_gradients(zip(grads, tvars),
+                global_step=self.global_step)
         return self.train_op
 
     def evaluate(self):
@@ -96,8 +114,7 @@ class vgg16:
                     dtype=tf.float32,
                     shape=[1, 1, 1, 3],
                     name='img_mean')
-            images = self.x-mean
-        #images = self.x / 255.0
+            images = self.x*255.0 - mean
 
         # conv1_1
         self.conv1_1, weights, biases = layers.conv2d(name='conv1_1',
@@ -105,8 +122,10 @@ class vgg16:
                 shape=(3,3,3,64),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
+
+        layers.conv_visual_summary(weights, name='conv_1_1')
 
         # conv1_2
         self.conv1_2, weights, biases = layers.conv2d(name='conv1_2',
@@ -114,7 +133,7 @@ class vgg16:
                 shape=(3,3,64,64),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # pool1
@@ -130,7 +149,7 @@ class vgg16:
                 shape=(3,3,64,128),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv2_2
@@ -139,7 +158,7 @@ class vgg16:
                 shape=(3,3,128,128),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # pool2
@@ -155,7 +174,7 @@ class vgg16:
                 shape=(3,3,128,256),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv3_2
@@ -164,7 +183,7 @@ class vgg16:
                 shape=(3,3,256,256),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv3_3
@@ -173,7 +192,7 @@ class vgg16:
                 shape=(3,3,256,256),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # pool3
@@ -189,7 +208,7 @@ class vgg16:
                 shape=(3,3,256,512),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv4_2
@@ -198,7 +217,7 @@ class vgg16:
                 shape=(3,3,512,512),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv4_3
@@ -207,7 +226,7 @@ class vgg16:
                 shape=(3,3,512,512),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # pool4
@@ -223,7 +242,7 @@ class vgg16:
                 shape=(3,3,512,512),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv5_2
@@ -232,7 +251,7 @@ class vgg16:
                 shape=(3,3,512,512),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # conv5_3
@@ -241,7 +260,7 @@ class vgg16:
                 shape=(3,3,512,512),
                 padding='SAME',
                 strides = [1,1,1,1],
-                activation='relu')
+                activation=self.CONV_ACTIVATION)
         self.parameters += [weights, biases]
 
         # pool5
@@ -259,14 +278,14 @@ class vgg16:
         self.fc1, weights, biases = layers.fc(name='fc1',
                 input=self.pool5,
                 units=4096,
-                activation='relu')
+                activation=self.FC_ACTIVATION)
         self.parameters += [weights, biases]
 
         # fc2
         self.fc2, weights, biases = layers.fc(name='fc2',
                 input=self.fc1,
                 units=4096,
-                activation='relu')
+                activation=self.FC_ACTIVATION)
         self.parameters += [weights, biases]
 
         # fc3
@@ -278,7 +297,7 @@ class vgg16:
         # Softmax
         self.predictions = tf.nn.softmax(self.fc3)
 
-    def load_npz_weights(self, weight_file, sess):
+    def load_pretrained_weights(self, sess):
         '''
         Load Pretrained VGG16 weights from .npz file
         (weights converted from Caffe)
@@ -289,7 +308,7 @@ class vgg16:
         '''
         print "Loading Imagenet Weights."
 
-        weights = np.load(weight_file)
+        weights = np.load(self.WEIGHT_FILE)
         keys = sorted(weights.keys())
         for i, k in enumerate(keys):
             print i, k, np.shape(weights[k])
