@@ -329,7 +329,7 @@ def run_validate():
 
     best_loss = np.amin(val_loss)
     best_acc  = np.amax(val_acc)
-    best_itr  = val_itr[np.argmax(val_acc)]
+    best_itr  = val_itr[np.argmax(val_loss)]
 
     print('Overall Results')
     print('Minimum Loss: %.4f' % best_loss)
