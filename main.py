@@ -4,13 +4,21 @@ from __future__ import division
 from __future__ import print_function
 from six.moves import xrange
 
+# Import scipy after tensorflow causes issues for some reason
+from scipy.io import savemat
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' #Vary TF Verbosity
+
 import tensorflow as tf
+import numpy as np
 from tensorflow.python.client import timeline
 import os
 import sys
 from time import time
 import re
 import pdb
+#from scipy.io import savemat
 
 from vgg16 import vgg16 as model
 #from shallow import shallow as vgg16
@@ -222,6 +230,9 @@ def run_validate():
         compute_string ='/cpu:0'
 
     # Iterate through the checkpoints
+    val_loss = []
+    val_acc = []
+    val_itr = []
     for ckpt_path in meta_list:
         tf.reset_default_graph()
 
@@ -234,18 +245,19 @@ def run_validate():
                 validate_x, validate_y = data_pipeline.batch_ops()
 
         with tf.device(compute_string):
-            #######################
-            # Declare train graph #
-            #######################
+            ##########################
+            # Declare Validate Graph #
+            ##########################
             # Sets train/test mode; currently only used for BatchNormalization
             # True: Train   False: Test
             phase = tf.placeholder(tf.bool, name='phase')
             validate_model = model(validate_x, validate_y, phase)
 
             # Delete extraneous info when done debugging
-            validate_pred, _ = validate_model.inference()
+            validate_pred = validate_model.inference()
             validate_acc = validate_model.evaluate()
             validate_loss, gt_y = validate_model.loss()
+            global_step = validate_model.get_global_step()
 
         init = tf.group(tf.global_variables_initializer(),
                 tf.local_variables_initializer())
@@ -259,6 +271,7 @@ def run_validate():
             threads = tf.train.start_queue_runners(coord=coord)
 
             optimistic_restore(sess, ckpt_path)
+            global_step_value = global_step.eval()
             try:
                 step = 0
                 cum_loss = 0
@@ -271,7 +284,7 @@ def run_validate():
                     start_time = time()
                     loss_value, acc_value, prediction_value, gt_value = sess.run(
                             [validate_loss, validate_acc, validate_pred, gt_y],
-                            feed_dict={phase:True})
+                            feed_dict={phase:False})
                     duration_time = time() - start_time
 
                     cum_loss += loss_value
@@ -296,15 +309,40 @@ def run_validate():
             coord.request_stop()
             coord.join(threads)
 
-            # Print Cumulative results
-            avg_loss = cum_loss / step
-            avg_acc = cum_acc / step
-            avg_time = cum_time / step
-            print('Results For Load File: %s' % ckpt_path)
-            print('Average_Loss = %.4f' % avg_loss)
-            print('Average_Acc = %.4f' % avg_acc)
-            print('Run Time: %.2f' % cum_time)
-            sys.stdout.flush()
+        avg_loss = cum_loss / step
+        avg_acc = cum_acc / step
+        avg_time = cum_time / step
+
+        val_loss.append(float(avg_loss))
+        val_acc.append(float(avg_acc))
+        val_itr.append(int(global_step_value))
+
+        print('Results For Load File: %s' % ckpt_path)
+        print('Average_Loss = %.4f' % avg_loss)
+        print('Average_Acc = %.4f' % avg_acc)
+        print('Run Time: %.2f' % cum_time)
+        sys.stdout.flush()
+
+    val_loss = np.asarray(val_loss)
+    val_acc = np.asarray(val_acc)
+    val_itr = np.asarray(val_itr)
+
+    best_loss = np.amin(val_loss)
+    best_acc  = np.amax(val_acc)
+    best_itr  = val_itr[np.argmax(val_acc)]
+
+    print('Overall Results')
+    print('Minimum Loss: %.4f' % best_loss)
+    print('Maximum Acc: %.4f' % best_acc)
+    print('Best Checkpoint: %d' % best_itr)
+
+    save_path = os.path.join(FLAGS.log_dir, 'validation_results.mat')
+    save_dict = {
+            'val_loss':val_loss,
+            'val_acc':val_acc,
+            'val_itr':val_itr,
+            }
+    savemat(save_path, save_dict, appendmat=False)
 
 def run_test():
     pass
