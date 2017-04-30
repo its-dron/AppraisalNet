@@ -23,7 +23,7 @@ class vgg16:
 
         # List used for loading weights from vgg16.npz (if necessary)
         self.parameters = []
-        self.WEIGHT_FILE = '/appraisal_net/pretrained_weights/vgg16_weights.npz'
+        self.WEIGHT_FILE = '/media/storage/appraisal_net/pretrained_weights/vgg16_weights.npz'
         self.CONV_ACTIVATION = 'relu'
         self.FC_ACTIVATION   = 'relu'
 
@@ -114,11 +114,11 @@ class vgg16:
                     dtype=tf.float32,
                     shape=[1, 1, 1, 3],
                     name='img_mean')
-            images = self.x*255.0 - mean
+            self.images = self.x*255.0 - mean
 
         # conv1_1
         self.conv1_1, weights, biases = layers.conv2d(name='conv1_1',
-                input=images,
+                input=self.images,
                 shape=(3,3,3,64),
                 padding='SAME',
                 strides = [1,1,1,1],

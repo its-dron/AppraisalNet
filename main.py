@@ -5,14 +5,12 @@ from __future__ import print_function
 from six.moves import xrange
 
 # Import scipy after tensorflow causes issues for some reason
-from scipy.io import savemat
+# from scipy.io import savemat
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' #Vary TF Verbosity
 
-import tensorflow as tf
 import numpy as np
-from tensorflow.python.client import timeline
 import os
 import sys
 from time import time
@@ -24,6 +22,8 @@ from vgg16 import vgg16 as model
 #from shallow import shallow as vgg16
 from data_pipeline import DataPipeline
 
+import tensorflow as tf
+from tensorflow.python.client import timeline
 # Basic model parameters as external flags.
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -241,8 +241,8 @@ def run_validate():
         ####################
         with tf.device("/cpu:0"):
             with tf.variable_scope('validate') as scope:
-                data_pipeline = DataPipeline(augment=False, num_epochs=1)
-                validate_x, validate_y = data_pipeline.batch_ops()
+                data_pipeline = DataPipeline(augment=False, num_epochs=1, shuffle=False)
+                validate_x, validate_y, ids = data_pipeline.batch_ops()
 
         with tf.device(compute_string):
             ##########################
@@ -258,6 +258,7 @@ def run_validate():
             validate_acc = validate_model.evaluate()
             validate_loss, gt_y = validate_model.loss()
             global_step = validate_model.get_global_step()
+        summary = tf.summary.merge_all()
 
         init = tf.group(tf.global_variables_initializer(),
                 tf.local_variables_initializer())
@@ -265,6 +266,7 @@ def run_validate():
         session_config = tf.ConfigProto(allow_soft_placement=True)
         with tf.Session(config=session_config) as sess:
             sess.run(init)
+            summary_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
 
             # Coordinator hands data fetching threads
             coord = tf.train.Coordinator()
@@ -282,14 +284,15 @@ def run_validate():
                         break
                     step += 1
                     start_time = time()
-                    loss_value, acc_value, prediction_value, gt_value = sess.run(
-                            [validate_loss, validate_acc, validate_pred, gt_y],
+                    loss_value,acc_value,prediction_value,gt_value, ids_value = sess.run(
+                            [validate_loss,validate_acc,validate_pred,gt_y, ids],
                             feed_dict={phase:False})
                     duration_time = time() - start_time
 
                     cum_loss += loss_value
                     cum_acc += acc_value
                     cum_time += duration_time
+
 
                     if step % 1 == 0:
                         # Print progress to stdout
@@ -299,6 +302,14 @@ def run_validate():
                             print('Prediction:{}'.format(prediction_value))
                             print('GT:{}'.format(gt_value))
                         sys.stdout.flush()
+
+                    # Write the summaries
+                    if step % 25 == 0:
+                        # Update the summary file
+                        summary_str = sess.run(summary,
+                                feed_dict={phase:False})
+                        summary_writer.add_summary(summary_str, global_step_value)
+                        summary_writer.flush()
 
             except tf.errors.OutOfRangeError:
                 step -= 1
@@ -336,16 +347,100 @@ def run_validate():
     print('Maximum Acc: %.4f' % best_acc)
     print('Best Checkpoint: %d' % best_itr)
 
-    save_path = os.path.join(FLAGS.log_dir, 'validation_results.mat')
-    save_dict = {
-            'val_loss':val_loss,
-            'val_acc':val_acc,
-            'val_itr':val_itr,
-            }
-    savemat(save_path, save_dict, appendmat=False)
+    save_path = os.path.join(FLAGS.log_dir, 'validation_results.npz')
+    np.savez(save_path, val_loss=val_loss, val_acc=val_acc, val_itr=val_itr)
 
 def run_test():
-    pass
+    # Get all ckpt names in log dir (without meta ext)
+    meta_list = get_checkpoints(FLAGS.log_dir)
+
+    # GPU/CPU Flag
+    if FLAGS.gpu is not None:
+        compute_string = '/gpu:' + str(FLAGS.gpu)
+    else:
+        compute_string ='/cpu:0'
+
+    # Iterate through the checkpoints
+    for ckpt_path in meta_list:
+        tf.reset_default_graph()
+
+        ####################
+        # Setup Data Queue #
+        ####################
+        with tf.device("/cpu:0"):
+            with tf.variable_scope('test') as scope:
+                data_pipeline = DataPipeline(augment=False, num_epochs=1, shuffle=False)
+                validate_x, validate_y, ids = data_pipeline.batch_ops()
+
+        with tf.device(compute_string):
+            ##########################
+            # Declare Validate Graph #
+            ##########################
+            # Sets train/test mode; currently only used for BatchNormalization
+            # True: Train   False: Test
+            phase = tf.placeholder(tf.bool, name='phase')
+            validate_model = model(validate_x, validate_y, phase)
+
+            # Delete extraneous info when done debugging
+            validate_pred = validate_model.inference()
+            pool5 = validate_model.fc2
+
+        init = tf.group(tf.global_variables_initializer(),
+                tf.local_variables_initializer())
+
+        ids_file = open(os.path.join(FLAGS.log_dir, 'ids.txt'), 'w')
+        predictions_file = open(os.path.join(FLAGS.log_dir, 'predictions.txt'), 'w')
+
+
+        session_config = tf.ConfigProto(allow_soft_placement=True)
+        with tf.Session(config=session_config) as sess:
+            sess.run(init)
+
+            # Coordinator hands data fetching threads
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(coord=coord)
+
+            optimistic_restore(sess, ckpt_path)
+            try:
+                step = 0
+                cum_time = 0
+                while True:
+                    if coord.should_stop():
+                        break
+                    step += 1
+                    start_time = time()
+                    prediction_value, pool5_value, ids_value = sess.run(
+                            [validate_pred, pool5, ids],
+                            feed_dict={phase:False})
+                    duration_time = time() - start_time
+
+                    cum_time += duration_time
+
+                    feature_file = os.path.join(FLAGS.log_dir, "feature_%d" % step)
+                    #pool5_value = np.sum(pool5_value, (1,2)) #spatial average
+                    pool5_value = pool5_value.reshape(FLAGS.batch_size,-1)
+                    np.save(feature_file, pool5_value)
+
+                    for id in ids_value:
+                        ids_file.write("%s\n" % id)
+
+                    # Save prediction and ground truth info
+                    predictions_file.write(np.array_str( \
+                            prediction_value, \
+                            max_line_width=1e3, \
+                            precision=10, \
+                            suppress_small=True))
+                    predictions_file.write('\n')
+                    predictions_file.flush()
+
+            except tf.errors.OutOfRangeError:
+                step -= 1
+            except Exception as e:
+                step -= 1
+
+            # Stop Queueing data, we're done!
+            coord.request_stop()
+            coord.join(threads)
 
 def main(_):
     if FLAGS.mode.lower() == 'train':

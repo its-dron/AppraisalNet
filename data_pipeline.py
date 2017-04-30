@@ -82,7 +82,6 @@ class DataPipeline:
         '''
         image = image_utils.random_crop_and_resize_proper(image, self.IM_SHAPE[0:2])
         image = tf.reshape(image, self.IM_SHAPE) #define shape
-        #image = image.set_shape(self.IM_SHAPE) #define shape
 
         image = image_utils.random_color_augmentation(image)
         image = tf.image.random_flip_left_right(image)
@@ -101,10 +100,10 @@ class DataPipeline:
         image = tf.image.decode_jpeg(file_content, channels=3)
         # Convert to [0,1]
         image = tf.to_float(image) / 255.0
-        return image, label
+        return image, label, input_queue[0]
 
     def batch_ops(self):
-        return self.image_batch, self.label_batch
+        return self.image_batch, self.label_batch, self.ids_batch
 
     def _setup_data_pipeline(self, augment, num_epochs, shuffle):
         '''
@@ -136,12 +135,11 @@ class DataPipeline:
         # Define Data Retrieval Op #
         ############################
         # these input queues automatically dequeue 1 slice
-        image, label = self.get_data_from_queue(input_queue)
+        image, label, ids = self.get_data_from_queue(input_queue)
 
         #####################
         # Data Augmentation #
         #####################
-        # Network expects [0,255]
         if augment:
             image = self.augment_image(image)
         else:
@@ -150,8 +148,8 @@ class DataPipeline:
         ################
         # Minibatching #
         ################
-        self.image_batch, self.label_batch = tf.train.batch(
-                [image, label],
+        self.image_batch, self.label_batch, self.ids_batch = tf.train.batch(
+                [image, label, ids],
                 batch_size=FLAGS.batch_size,
                 num_threads=FLAGS.data_threads
                 )
